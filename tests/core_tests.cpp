@@ -193,6 +193,9 @@ int main(int argc, char **argv) {
         rejects([&]() { loadSong(root / "truncated"); }, "truncated MIDI rejected");
         auto stems = loadSong(root / "stems");
         check(stems.audio.size() == 4, "numbered stems replace combined stems; preview excluded");
+        check(stems.video.filename() == "Video.WEBM", "background video found whatever its case");
+        near(stems.videoStart, -1.5, "video_start_time is read in milliseconds");
+        check(a.video.empty() && a.videoStart == 0, "no video, and a bad start time is ignored");
         check(scanSongs(root).size() == 8, "recursive song scan");
         {
             // The song list cache: unchanged folders reuse what was read before,

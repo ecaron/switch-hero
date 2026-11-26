@@ -708,6 +708,17 @@ Song loadSong(const fs::path &folder) {
     }
     finish(s, raw);
     audioFiles(s, files);
+    // A video is decoration: a bad start time is ignored rather than turning
+    // a playable song away.
+    s.video = files.find("video.webm");
+    if (auto it = s.metadata.find("video_start_time"); it != s.metadata.end()) {
+        try {
+            const double ms = decimal(trim(it->second));
+            if (std::abs(ms) <= 3600 * 1000.0)
+                s.videoStart = ms / 1000;
+        } catch (const std::exception &) {
+        }
+    }
     return s;
 }
 SongBrief peekSong(const fs::path &folder) { return peekSong(FolderFiles::list(folder)); }

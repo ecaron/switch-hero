@@ -370,6 +370,9 @@ const std::tuple<const char *, const char *, const char *> translationTable[] = 
     {"{}% hit", "{}% de acertos", "{}% de aciertos"},
     {"FINAL STANDINGS", "CLASSIFICAÇÃO FINAL", "CLASIFICACIÓN FINAL"},
     {"A plays again   B returns to the song list", "A joga de novo   B volta para a lista", "A juega de nuevo   B vuelve a la lista de canciones"},
+    {"Background video", "Vídeo de fundo", "Video de fondo"},
+    {"Plays the song's video.webm behind the highway, if its folder has one.", "Toca o video.webm da música atrás da pista, se a pasta dela tiver um.", "Reproduce el video.webm de la canción detrás de la pista, si su carpeta tiene uno."},
+    {"This build has no video support.", "Esta versão não tem suporte a vídeo.", "Esta versión no admite video."},
     {"Film grain", "Granulado", "Grano de película"},
     {"The moving speckle over the picture. Turn it off first if frames drop.", "O granulado que se move sobre a imagem. Desligue primeiro se a imagem travar.", "El granulado que se mueve sobre la imagen. Desactívalo primero si bajan los fotogramas."},
 

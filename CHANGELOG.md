@@ -26,6 +26,22 @@ cross-build. The items marked *(hardware)* still need a run on a console.
   re-strike consumes that press, so one press still hits one note.
   Contributed by aloumamae.
 
+### Background video *(hardware)*
+- **Options -> Customize -> Background video** (off by default) plays a song
+  folder's `video.webm` full screen behind the highway, dimmed so the notes stay
+  readable, in single player and behind every board in multiplayer.
+- The video follows the song clock rather than running on its own, so pause,
+  restart, practice loops and the visual offset all keep it in step; a jump the
+  decoder can't reach by playing forward becomes a seek. `song.ini`'s
+  `video_start_time` shifts it as in Clone Hero.
+- VP8, VP9 and AV1 decode in software (FFmpeg, from devkitPro's portlibs) on
+  one thread on a spare core, below the input and audio threads. Late frames
+  are dropped and, if it keeps falling behind, the loop filter is switched off;
+  the notes are never held up. 720p should be comfortable; 1080p is the thing
+  to check on a console. The NRO grows from about 15 MB to 28 MB.
+- A desktop build without FFmpeg's development files still builds, with the
+  option shown as unavailable. `--smoke-video` runs the smoke test with video on.
+
 ### Wii guitars in multiplayer *(hardware)*
 - The strum bar now strums in multiplayer. Seats only took A as a strum, and
   MissionControl sends the strum bar as d-pad up/down, so no guitar could hit

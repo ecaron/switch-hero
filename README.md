@@ -229,7 +229,8 @@ panel:
   over each second (plus audio clock drift during a song), and film grain.
 - **Controls:** fret buttons, controller test, reset all options (press A
   twice to confirm).
-- **Customize:** highway and note colours, with a live preview.
+- **Customize:** highway and note colours, with a live preview, and the
+  background video.
 - **Language:** English or Português.
 
 On the results screen, **Y** switches to a section-by-section view.
@@ -303,7 +304,19 @@ rules, not a promise of exact Clone Hero score parity.
 
 ### Customization
 
-Options -> Customize picks the **highway** and the **note colors**.
+Options -> Customize picks the **highway** and the **note colors**, and turns
+the **background video** on or off.
+
+- **Background video (off by default):** when a song folder has a
+  `video.webm`, it plays full screen behind the highway, dimmed so the notes
+  stay readable, in single player and behind every board in multiplayer. It
+  follows the song clock, so pausing, restarting and practice loops keep it in
+  step, and `song.ini`'s `video_start_time` (milliseconds) shifts it as in Clone
+  Hero. VP8, VP9 and AV1 are decoded in software on a core of their own; a
+  video the console can't keep up with drops frames, then turns off the loop
+  filter for a softer but cheaper picture, and never holds up the notes. 720p
+  is the safe size; 1080p may stutter. Before the video starts and after it
+  ends, the usual room shows.
 
 - **Highways (13):** Grip tape, Rosewood, Synthwave, Pastel dream, Hellfire,
   Diamond plate, Carbon fiber, Thunderstorm, Toxic waste, Zebra,
@@ -387,8 +400,9 @@ and any parts the game can't play.
 
 Charts arrive as `.sng` packages. The game unpacks them in a staging folder and
 moves them into place only when complete, so a failed or cancelled download
-never leaves half a song behind. Background videos are skipped, because the
-game doesn't play them. The package's metadata becomes `song.ini`.
+never leaves half a song behind. Background videos are skipped to keep
+downloads small (copy a `video.webm` into the song folder yourself to see
+one). The package's metadata becomes `song.ini`.
 
 The Switch needs an internet connection. Networking only starts the first time
 you open the download screen. HTTPS uses the console's own SSL service.
@@ -415,6 +429,7 @@ songs/
     song.ogg             (or song.opus / song.mp3 / guitar.ogg, etc.)
     guitar.ogg           (optional separate stem)
     drums_1.ogg          (optional separate stem)
+    video.webm           (optional background video)
 ```
 
 Subfolders are scanned recursively, up to 16 levels deep. Standard file names
@@ -450,6 +465,7 @@ checks its audio.
 | FLAC | Desktop only; convert to OGG before Switch use |
 | `.sng` packages | Unpacked by the in-game downloader; copied `.sng` files aren't opened directly |
 | ZIP, RAR archives | Not opened; extract to a song folder first |
+| `video.webm` background video | VP8/VP9/AV1, optional (Options -> Customize); `video_start_time` honoured; other video file names aren't played |
 | Accented titles | Shown without accents (the fonts are ASCII); other scripts show as `?` |
 | Video/background art, lyrics, solos/BRE special scoring | Not implemented; gameplay still reads regular notes |
 | Six-fret guitars, drums, vocals, pro instruments | Not playable in this version |
@@ -543,6 +559,8 @@ project owner.
 ```bash
 sudo apt update
 sudo apt install build-essential cmake libsdl2-dev libsndfile1-dev libcurl4-openssl-dev python3 ffmpeg
+# Optional, for background videos; without them the option shows as unavailable.
+sudo apt install pkg-config libavformat-dev libavcodec-dev libswscale-dev
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
@@ -567,7 +585,7 @@ Install the official devkitPro toolchain following
 <https://devkitpro.org/wiki/Getting_Started>. With `dkp-pacman` configured:
 
 ```bash
-sudo dkp-pacman -S --needed switch-dev switch-sdl2 switch-libvorbis switch-opusfile switch-mpg123 switch-curl
+sudo dkp-pacman -S --needed switch-dev switch-sdl2 switch-libvorbis switch-opusfile switch-mpg123 switch-curl switch-ffmpeg
 bash tools/build-switch.sh
 ```
 
@@ -605,6 +623,8 @@ First hardware check:
 - **enchor**: search requests and responses, folder names, and `.sng`
   unpacking, including path traversal, truncated and bogus packages.
 - **guitar**: Wii guitar input routing.
+- **video**: background video timing: where the picture belongs against the
+  song clock, when the decoder must seek, and which queued frame to show.
 
 A real SDL virtual-controller test plays the demo through the normal input path:
 
@@ -612,6 +632,9 @@ A real SDL virtual-controller test plays the demo through the normal input path:
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   ./build/switch-hero --songs ./songs --smoke --screenshot preview.bmp
 ```
+
+`--smoke-video` does the same with the background video on, so a song folder
+with a `video.webm` exercises the decoder and the drawing behind the highway.
 
 It fails if fewer than two notes are hit or playback is interrupted. It uses
 default bindings and doesn't save its settings. The dummy audio driver proves
@@ -624,6 +647,7 @@ the software works together, not physical sound or output latency.
 - `include/clock.hpp`: the song clock.
 - `include/calibration.hpp`: tap-along offset calibration.
 - `src/audio.cpp`: streaming decoders, mixing, sound effects and the calibration click track.
+- `src/video.cpp`, `include/video.hpp`: background video decoding on its own thread, kept on the song clock.
 - `src/enchor.cpp`: Chorus Encore requests and responses, and `.sng` unpacking.
 - `src/downloader.cpp`: the background download thread (curl; libnx sockets on Switch).
 - `src/main.cpp`: screens, highway layout, menus, controller mapping, Switch libnx input.

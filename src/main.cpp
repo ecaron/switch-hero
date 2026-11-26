@@ -10,6 +10,7 @@
 #include "look.hpp"
 #include "platform.hpp"
 #include "scores.hpp"
+#include "video.hpp"
 #include <SDL.h>
 #include <algorithm>
 #include <array>
@@ -110,6 +111,9 @@ struct Settings {
     int highway = 0, palette = 0;
     bool rumble = true;
     bool hitRatings = true; // the PERFECT / GREAT / GOOD pop-up over the strike line
+    // A song's video.webm behind the highway. Off by default: decoding video
+    // is the heaviest thing the game can ask of the console.
+    bool backgroundVideo = false;
     void load(const fs::path &path) {
         std::ifstream f(path);
         std::string line;
@@ -147,6 +151,8 @@ struct Settings {
                 rumble = v != 0;
             if (k == "film_grain")
                 filmGrain = v != 0;
+            if (k == "background_video")
+                backgroundVideo = v != 0;
             if (k == "sort_mode")
                 sortMode = whole(v, 0, 2);
             if (k == "hit_window")
@@ -191,7 +197,7 @@ struct Settings {
           << "\nfilm_grain " << filmGrain
           << "\nsort_mode " << sortMode << "\nhit_window " << hitWindow << "\nmusic_volume " << musicVolume
           << "\nsfx_volume " << sfxVolume << "\nhighway " << highway << "\npalette " << palette << "\nrumble " << rumble
-          << "\nhit_ratings " << hitRatings << '\n';
+          << "\nhit_ratings " << hitRatings << "\nbackground_video " << backgroundVideo << '\n';
         if (language >= 0)
             f << "language " << language << '\n';
         if (!lastSong.empty())
@@ -1198,7 +1204,7 @@ void menu(float cx, float y, float spacing, const std::vector<std::string> &item
 
 // The options screens: a short list of categories, each opening its own page,
 // so every setting sits under a name that says what it is for.
-enum class Opt { Mode, NoFail, HitWindow, Speed, Lefty, TimingOverlay, FilmGrain, Music, Effects, CalibrateAudio, AudioOffset, CalibrateVideo, VideoOffset, Fret, Test, Reset, Language, Highway, Palette, Rumble, HitRatings };
+enum class Opt { Mode, NoFail, HitWindow, Speed, Lefty, TimingOverlay, FilmGrain, Music, Effects, CalibrateAudio, AudioOffset, CalibrateVideo, VideoOffset, Fret, Test, Reset, Language, Highway, Palette, Rumble, HitRatings, BackgroundVideo };
 struct OptionRow {
     Opt id;
     int fret = 0;
@@ -1278,6 +1284,12 @@ std::vector<OptionRow> optionRows(int page, const Settings &s, bool confirmReset
         rows.push_back({Opt::Palette, 0, tr("Note colors"), tr(look::palettes()[size_t(s.palette)].name),
                         tr("Gems, fret buttons, sustains and flames. Star power stays blue."), true, "",
                         of(s.palette, look::palettes().size())});
+        if (BackgroundVideo::supported())
+            rows.push_back({Opt::BackgroundVideo, 0, tr("Background video"), tr(s.backgroundVideo ? "ON" : "OFF"),
+                            tr("Plays the song's video.webm behind the highway, if its folder has one."), true});
+        else
+            rows.push_back({Opt::BackgroundVideo, 0, tr("Background video"), tr("OFF"),
+                            tr("This build has no video support."), false});
     } else if (page == 5) {
         // Each language is shown in its own name, so a player who cannot read
         // the current one still recognises theirs.
@@ -1331,7 +1343,7 @@ int main(int argc, char **argv) {
 #else
         fs::path root = "songs", config = "settings.cfg", scoresPath = "scores.cfg", libraryPath = "library.cache";
 #endif
-        bool inspect = false, smoke = false, smokeGuitar = false, timing = false, checkGemsOnly = false;
+        bool inspect = false, smoke = false, smokeGuitar = false, smokeVideo = false, timing = false, checkGemsOnly = false;
         std::string bakeGemsTo;
         std::string shot = "switch-hero.bmp";
         for (int i = 1; i < argc; ++i) {
@@ -1342,6 +1354,8 @@ int main(int argc, char **argv) {
                 smoke = true;
             else if (a == "--smoke-wii-guitar")
                 smoke = smokeGuitar = true;
+            else if (a == "--smoke-video")
+                smoke = smokeVideo = true; // the smoke test with background video on
             else if (a == "--timing")
                 timing = true;
             else if (a == "--screenshot" && i + 1 < argc)
@@ -1353,7 +1367,7 @@ int main(int argc, char **argv) {
             else if (a == "--check-gems")
                 checkGemsOnly = true;
             else if (a == "--help") {
-                std::cout << "switch-hero [--songs FOLDER] [--inspect] [--smoke | --smoke-wii-guitar] [--timing] [--screenshot FILE.bmp]\n"
+                std::cout << "switch-hero [--songs FOLDER] [--inspect] [--smoke | --smoke-wii-guitar | --smoke-video] [--timing] [--screenshot FILE.bmp]\n"
                              "            [--bake-gems FILE] [--check-gems]\n";
                 return 0;
             } else
@@ -1549,6 +1563,8 @@ int main(int argc, char **argv) {
         Controller controller;
         if (smokeGuitar)
             settings.wiiGuitar = true;
+        if (smokeVideo)
+            settings.backgroundVideo = true;
         Audio audio;
         audio.start(); // interface sounds work from the song list onward
         enum class Screen { Language, Main, Library, Select, Playing, Paused, Countdown, Results, Settings, Calibrate, Download, Sections, Lobby };
@@ -1573,6 +1589,30 @@ int main(int argc, char **argv) {
         // multiplayer branch below is guarded on it, so the single-player path
         // stays exactly the code it was.
         std::unique_ptr<MultiSession> multi;
+        // The song's video.webm behind the highway, when the option is on.
+        BackgroundVideo video;
+        auto openVideo = [&]() {
+            if (settings.backgroundVideo && song && !song->video.empty())
+                video.open(song->video); // the same file again only seeks
+            else
+                video.close();
+        };
+        // Draws the video frame for the moment the highway shows, full screen
+        // and cropped to fill it, dimmed so the notes stay the brightest thing
+        // on screen. Nothing is drawn while there is no frame: the room shows.
+        auto backdrop = [&](double chartTime) {
+            if (!song || !video.active())
+                return;
+            SDL_Texture *t = video.frame(renderer, videoClock(chartTime, song->offset, song->videoStart));
+            if (!t || video.width() <= 0 || video.height() <= 0)
+                return;
+            const float scale = std::max(float(W) / video.width(), float(H) / video.height());
+            const float w = video.width() * scale, h = video.height() * scale;
+            const SDL_FRect dst{(W - w) / 2, (H - h) / 2, w, h};
+            look::flush();
+            SDL_RenderCopyF(renderer, t, nullptr, &dst);
+            look::rect(0, 0, W, H, {0, 0, 0, 150});
+        };
         // Lobby: who has joined, and what each of them picked.
         struct Seat {
             bool joined = false;
@@ -1976,6 +2016,7 @@ int main(int argc, char **argv) {
                 }
                 multi.reset(); // single player owns the screen again
                 newRun();
+                openVideo();
                 previewActive = false, previewFolder.clear(); // load() replaced the preview
                 settings.lastSong = song->folder.filename().string();
                 audio.pause(false);
@@ -2056,6 +2097,7 @@ int main(int argc, char **argv) {
                 audio.load(*song);
                 multi = std::make_unique<MultiSession>(*song, tracks, settings.hitWindow);
                 lobbySeats = whose;
+                openVideo();
                 for (auto &p : multi->players)
                     p.gamepadMode = settings.gamepad && !settings.wiiGuitar;
                 // The rock meter still moves and still reads red on a player's own
@@ -2912,6 +2954,13 @@ int main(int argc, char **argv) {
                                 audio.playSfx(Sfx::Toggle, .8f);
                         }
                         break;
+                    case Opt::BackgroundVideo:
+                        if ((delta || accept) && BackgroundVideo::supported()) {
+                            settings.backgroundVideo = !settings.backgroundVideo;
+                            if (accept)
+                                audio.playSfx(Sfx::Toggle, .8f);
+                        }
+                        break;
                     case Opt::FilmGrain:
                         if (delta || accept) {
                             settings.filmGrain = !settings.filmGrain;
@@ -3508,6 +3557,10 @@ int main(int argc, char **argv) {
             }
             const std::string glyphAccept = acceptGlyph(settings.wiiGuitar), glyphBack = backGlyph(settings.wiiGuitar),
                               glyphAlt = altGlyph(settings.wiiGuitar);
+            // The decoder only runs while a song is on screen.
+            if (screen != Screen::Playing && screen != Screen::Paused && screen != Screen::Countdown &&
+                screen != Screen::Results && video.active())
+                video.close();
             if (screen == Screen::Language) {
                 wall(ui, ink::crt);
                 auto title = stencil(66, ink::chrome, {116, 122, 138, 255});
@@ -4388,7 +4441,9 @@ int main(int argc, char **argv) {
                 const size_t n = multi->size();
                 // The wall is the room everyone is in, so it is drawn once behind
                 // every pane rather than once per pane, where the seams would show.
+                // The video is the same: one picture behind every board.
                 wall(ui, ink::crt);
+                backdrop(time - settings.videoMs / 1000);
                 // Each board wears its own player's highway and note colours.
                 Settings looks = settings;
                 for (size_t i = 0; i < n; ++i) {
@@ -4553,6 +4608,7 @@ int main(int argc, char **argv) {
             } else if (session && song) {
                 double time = screen == Screen::Playing ? songTime() : frozen;
                 wall(ui, session->powerActive ? ink::power : ink::crt);
+                backdrop(time - settings.videoMs / 1000);
                 highway(*song, *session, settings, time - settings.videoMs / 1000, frets, ui);
                 // Call the timing. A hit that the game cannot tell you was tight is a
                 // hit that feels the same as one scraped in at the edge of the window,
@@ -4979,6 +5035,7 @@ int main(int argc, char **argv) {
             SDL_DestroyTexture(downloadArt);
         for (auto *t : retired)
             SDL_DestroyTexture(t);
+        video.close(); // its texture belongs to the renderer
         look::shutdown();
         SDL_DestroyRenderer(renderer);
         look::renderer = nullptr;

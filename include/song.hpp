@@ -54,6 +54,11 @@ struct Song {
     std::vector<Track> tracks;
     std::vector<Section> sections; // sorted by time; empty when the chart names none
     std::vector<fs::path> audio;
+    // The background video, when the folder ships a video.webm, and how far
+    // into it the song's audio starts: song.ini's video_start_time, in
+    // seconds. Positive skips into the video; negative holds it back.
+    fs::path video;
+    double videoStart = 0;
     std::vector<std::string> warnings;
     double seconds(Tick tick) const;
     double tickAt(double seconds) const;
