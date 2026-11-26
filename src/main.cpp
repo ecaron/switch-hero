@@ -312,8 +312,8 @@ class Controller {
             for (size_t p = 0; p < maxPlayers; ++p)
                 s.standardStick[p] = std::max(deflection(padGetStickPos(&nx[p], 0)), deflection(padGetStickPos(&nx[p], 1)));
             s.guitarWhammy = std::clamp(float(padGetStickPos(&nxGuitar, 1).x) / JOYSTICK_MAX, 0.0f, 1.0f);
-            // Each player is stamped from their own rising edge. The guitar only
-            // ever belongs to player one, so it is folded into that pad alone.
+            // Each player is stamped from their own rising edge. The separate No1
+            // guitar pad is player one's, so it is folded into that pad alone.
             bool rising[maxPlayers];
             for (size_t p = 0; p < maxPlayers; ++p) {
                 const uint64_t down = (s.standard[p] | (p == 0 ? s.guitar : 0)) & watched;
@@ -522,7 +522,9 @@ class Controller {
                 *pressedAt = pressAt[player];
             pressAt[player] = -1;
         }
-        // Only player one can hold the Wii guitar; the others are plain pads.
+        // Player one's guitar is read through its own No1 pad so it can be
+        // isolated from the handheld controls. A guitar on seats two to four is
+        // simply that seat's pad, and its buttons arrive through `standard`.
         const bool guitarHere = wiiGuitar && player == 0;
         guitarConnected = s.guitarOn;
         if (player == 0)
@@ -2421,8 +2423,8 @@ int main(int argc, char **argv) {
                                pDown = seatPress(12) || (p == 0 && key(SDL_SCANCODE_DOWN)),
                                pLeft = seatPress(13) || (p == 0 && key(SDL_SCANCODE_LEFT)),
                                pRight = seatPress(14) || (p == 0 && key(SDL_SCANCODE_RIGHT)),
-                               pAccept = seatPress(1) || (p == 0 && key(SDL_SCANCODE_RETURN)),
-                               pBack = seatPress(0) || seatPress(4) || (p == 0 && key(SDL_SCANCODE_ESCAPE));
+                               pAccept = seatAccept(settings.wiiGuitar, hit) || (p == 0 && key(SDL_SCANCODE_RETURN)),
+                               pBack = seatBack(settings.wiiGuitar, hit) || (p == 0 && key(SDL_SCANCODE_ESCAPE));
                     auto &seat = seats[p];
                     if (!seat.joined) {
                         // Player one cannot leave: backing out of the lobby is
@@ -3008,22 +3010,27 @@ int main(int argc, char **argv) {
                     for (size_t i = 0; i < multi->size(); ++i) {
                         const size_t seat = i < lobbySeats.size() ? lobbySeats[i] : i;
                         double seatStamp = -1;
-                        const uint64_t held = controller.read(settings.wiiGuitar, true, &seatStamp, seat);
+                        float seatWhammy = 0;
+                        const uint64_t held =
+                            controller.read(settings.wiiGuitar, true, &seatStamp, seat, &seatWhammy);
+                        // The frame's general read already took player one's
+                        // press stamp, so theirs comes from there.
+                        if (seat == 0)
+                            seatStamp = pressedAtSeconds;
                         const uint64_t hit = held & ~previousSeatButtons[seat];
                         previousSeatButtons[seat] = held;
-                        uint8_t seatFrets = settings.wiiGuitar && seat == 0 ? wiiGuitarFrets(held) : 0;
-                        if (!(settings.wiiGuitar && seat == 0))
-                            for (int f = 0; f < 5; ++f)
-                                if (held & bit(settings.bindings[size_t(f)]))
-                                    seatFrets |= uint8_t(1 << f);
+                        // Any seat may hold a guitar, so guitar mode gives every
+                        // seat the fixed guitar frets and the strum bar.
+                        const uint8_t playerFrets = seatFrets(settings.wiiGuitar, held, settings.bindings);
                         if (hit & bit(3))
                             (*multi)[i].activate();
                         // Kept for the render: the highway lights the fret a
                         // player is holding from this, so without it their
                         // buttons only lit when a note was actually judged.
-                        seatFretsNow[i] = seatFrets;
+                        seatFretsNow[i] = playerFrets;
                         auto &p = (*multi)[i];
-                        p.update(time, seatFrets, bool(hit & bit(1)), bool(hit & bit(1)),
+                        p.whammy(seatWhammy, time);
+                        p.update(time, playerFrets, strummed(hit), bool(hit & bit(1)),
                                  seatPressTime(time, seatStamp));
                         // One screech per fumble, and the rate limit is shared:
                         // four players dropping notes at once would otherwise

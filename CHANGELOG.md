@@ -26,6 +26,17 @@ cross-build. The items marked *(hardware)* still need a run on a console.
   re-strike consumes that press, so one press still hits one note.
   Contributed by aloumamae.
 
+### Wii guitars in multiplayer *(hardware)*
+- The strum bar now strums in multiplayer. Seats only took A as a strum, and
+  MissionControl sends the strum bar as d-pad up/down, so no guitar could hit
+  a strummed note.
+- In guitar mode every seat uses the fixed guitar frets, so two to four guitars
+  can play at once, not just player one's.
+- In the lobby a guitar joins with green and leaves with red; the orange fret
+  (B) no longer drops the seat.
+- Multiplayer reads each seat's whammy, and player one's presses keep their
+  timestamp instead of being judged at frame time.
+
 ### Other
 - The title screen and the download user agent show the full version
   (`v0.3.1`, `switch-hero/0.3.1`) rather than major.minor only.

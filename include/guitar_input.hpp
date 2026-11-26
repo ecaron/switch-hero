@@ -27,4 +27,32 @@ inline std::uint8_t wiiGuitarFrets(std::uint64_t buttons) {
             frets |= 1u << i;
     return frets;
 }
+// The frets one seat is holding. In Wii guitar mode every seat uses the fixed
+// guitar layout, since any seat may hold a guitar; otherwise the player's own
+// bindings apply.
+inline std::uint8_t seatFrets(bool wiiGuitar, std::uint64_t held, const std::array<int, 5> &bindings) {
+    if (wiiGuitar)
+        return wiiGuitarFrets(held);
+    std::uint8_t frets = 0;
+    for (int i = 0; i < 5; ++i)
+        if (held & (std::uint64_t{1} << bindings[i]))
+            frets |= 1u << i;
+    return frets;
+}
+// A strum, as in single player: A, or either direction of the strum bar, which
+// MissionControl sends as d-pad up and down.
+inline constexpr std::uint64_t strumMask = (std::uint64_t{1} << 1) | (std::uint64_t{1} << 11) | (std::uint64_t{1} << 12);
+inline constexpr bool strummed(std::uint64_t newlyPressed) { return (newlyPressed & strumMask) != 0; }
+// Lobby accept and back for one seat. A guitar seat also accepts with the green
+// fret and backs with red, as the guitar menus do elsewhere. B is the orange
+// fret, so in guitar mode it must not back out (that would drop the seat).
+inline constexpr bool seatAccept(bool wiiGuitar, std::uint64_t newlyPressed) {
+    return (newlyPressed & (std::uint64_t{1} << 1)) ||
+           (wiiGuitar && (newlyPressed & (std::uint64_t{1} << wiiGuitarBindings[0])));
+}
+inline constexpr bool seatBack(bool wiiGuitar, std::uint64_t newlyPressed) {
+    const std::uint64_t minus = std::uint64_t{1} << 4;
+    const std::uint64_t back = wiiGuitar ? std::uint64_t{1} << wiiGuitarBindings[1] : std::uint64_t{1} << 0;
+    return (newlyPressed & (minus | back)) != 0;
+}
 } // namespace fret

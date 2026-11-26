@@ -325,7 +325,10 @@ Bluetooth needs the supplied **MissionControl guitar-extension patch** from
 [`integrations/missioncontrol/`](integrations/missioncontrol/README.md).
 Installing the game alone, or using stock MissionControl, isn't enough.
 
-Guitar mode only takes over player one while a controller is connected there.
+In multiplayer, any seat can hold a Wii guitar: guitar mode gives every seat
+the fixed fret layout and strum bar, green joins the lobby and red leaves it.
+In single player, guitar mode only takes over player one while a controller is
+connected there.
 Plus and Minus always respond from the normal controller, so guitar mode can't
 lock you out of the game. **Options → Controls → Controller test** shows live input for
 diagnosing a guitar. Tilt, whammy effects and touch-strip inputs aren't
