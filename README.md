@@ -74,7 +74,8 @@ delete the old folder so the Homebrew Menu only lists Switch Hero.
 - **Offset calibration.** Tap along to set the audio and visual offsets (see
   [Calibration](#calibration)).
 - **In-game chart downloads** from Chorus Encore (see
-  [Downloading charts](#downloading-charts)).
+  [Downloading charts](#downloading-charts)), and an **FTP mode** for copying
+  songs from a computer (see [Copying songs over FTP](#copying-songs-over-ftp)).
 - **Cut-jewel gems and classic fire.** Gems are rendered in 3D ahead of time
   and ship in `assets/gems.bin`. A ray marcher lights each sprite pixel of a
   cut jewel in a gunmetal bezel: eight crown facets rise to a flat table, and
@@ -408,6 +409,26 @@ The Switch needs an internet connection. Networking only starts the first time
 you open the download screen. HTTPS uses the console's own SSL service.
 Requests identify the game as `switch-hero/0.3.1`.
 
+### Copying songs over FTP
+
+Press **+** on the download screen to start FTP mode. The screen shows an
+address such as `ftp://192.168.1.23:5000`; connect to it from any FTP client
+(FileZilla, WinSCP, a file manager or `curl`) on the same network. Press
+**+** or **B** to stop.
+
+- **Log in anonymously:** user `anonymous`, any password. There is no other
+  account yet.
+- **Only the songs folder is shared.** The client sees
+  `sd:/switch/switch-hero/songs` as `/`, and nothing outside it can be named,
+  listed, read or written: `..` stops at that root.
+- Copy each song as its own folder (`Artist - Song/notes.chart`, `song.ogg`,
+  and so on). Uploads, downloads, new folders, renames and deletes all work;
+  a folder must be empty before it can be removed, which clients handle for you.
+- **Passive mode only**, the default in every current client. Up to four
+  clients at once, on port 5000.
+- The console stays awake while FTP mode is on. New songs join the list when
+  you stop it.
+
 ### Deleting songs
 
 Press **X** on the song list (the blue fret on a Wii guitar, Delete on a
@@ -625,6 +646,9 @@ First hardware check:
 - **guitar**: Wii guitar input routing.
 - **video**: background video timing: where the picture belongs against the
   song clock, when the decoder must seek, and which queued frame to show.
+- **ftp**: FTP mode over real loopback sockets: login, uploads, listings,
+  downloads, renames and deletes, and every way out of the songs folder
+  (`..`, `/..`, backslashes, symlinks) refused.
 
 A real SDL virtual-controller test plays the demo through the normal input path:
 
@@ -650,6 +674,7 @@ the software works together, not physical sound or output latency.
 - `src/video.cpp`, `include/video.hpp`: background video decoding on its own thread, kept on the song clock.
 - `src/enchor.cpp`: Chorus Encore requests and responses, and `.sng` unpacking.
 - `src/downloader.cpp`: the background download thread (curl; libnx sockets on Switch).
+- `src/ftp.cpp`, `include/ftp.hpp`: FTP mode's server, confined to the songs folder.
 - `src/main.cpp`: screens, highway layout, menus, controller mapping, Switch libnx input.
 - `src/look.cpp`: fonts, procedural textures, gems, fret buttons, fire, UI pieces.
 - `include/guitar_input.hpp`, `integrations/missioncontrol/`: Wii guitar support.

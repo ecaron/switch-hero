@@ -21,7 +21,7 @@ if(SWITCH_HERO_BUILD_GAME)
     target_link_libraries(fret_sdl INTERFACE ${SDL2_LIBRARY})
     set(FRET_SDL_TARGET fret_sdl)
   endif()
-  add_executable(switch-hero src/main.cpp src/audio.cpp src/look.cpp src/downloader.cpp src/video.cpp)
+  add_executable(switch-hero src/main.cpp src/audio.cpp src/look.cpp src/downloader.cpp src/video.cpp src/ftp.cpp)
   # Background videos (a song's video.webm) need FFmpeg. The console build
   # always has it from devkitPro's portlibs; a desktop build without its
   # development files still builds, with the option shown as unavailable.
@@ -100,6 +100,10 @@ if(NOT NINTENDO_SWITCH)
     target_include_directories(video_tests PRIVATE include)
     target_link_libraries(video_tests PRIVATE ${FRET_SDL_TARGET})
     add_test(NAME video COMMAND video_tests)
+    # FTP mode, over real sockets on the loopback interface.
+    add_executable(ftp_tests tests/ftp_tests.cpp src/ftp.cpp)
+    target_link_libraries(ftp_tests PRIVATE switch_hero_core Threads::Threads)
+    add_test(NAME ftp COMMAND ftp_tests)
     add_executable(audio_tests tests/audio_tests.cpp src/audio.cpp)
     target_link_libraries(audio_tests PRIVATE switch_hero_core ${FRET_SDL_TARGET} fret_sndfile Threads::Threads)
     add_test(NAME audio COMMAND audio_tests ${CMAKE_CURRENT_BINARY_DIR}/fixtures)

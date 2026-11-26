@@ -3,6 +3,7 @@
 #include "calibration.hpp"
 #include "clock.hpp"
 #include "downloader.hpp"
+#include "ftp.hpp"
 #include "game.hpp"
 #include "guitar_input.hpp"
 #include "lang.hpp"
@@ -1864,6 +1865,42 @@ int main(int argc, char **argv) {
         // when networking starts.
         std::unique_ptr<Downloader> downloader;
         Downloader::View downloads;
+        // FTP mode (Plus on the download screen): a server sharing the songs
+        // folder only. Declared after the downloader, whose network it uses,
+        // so it is stopped before that network goes down.
+        std::unique_ptr<FtpServer> ftp;
+        FtpServer::Status ftpStatus; // read once a frame
+        bool ftpCardChanged = false; // files changed over FTP: check the library again
+        auto ftpRunning = [&]() { return ftp && ftpStatus.running; };
+        auto setFtp = [&](bool on) {
+#ifdef __SWITCH__
+            // A long copy must not be cut off by the console going to sleep.
+            appletSetMediaPlaybackState(on);
+#endif
+            if (!on) {
+                if (ftp) {
+                    ftp->stop();
+                    ftpStatus = ftp->status();
+                    ftpCardChanged = ftpCardChanged || ftpStatus.changes > 0;
+                }
+                return;
+            }
+            try {
+                if (!downloader)
+                    throw std::runtime_error("Networking is not available");
+                downloader->startNetwork();
+                if (!ftp)
+                    ftp = std::make_unique<FtpServer>(root);
+                ftp->start();
+                ftpStatus = ftp->status();
+                message.clear();
+            } catch (const std::exception &e) {
+#ifdef __SWITCH__
+                appletSetMediaPlaybackState(false);
+#endif
+                message = e.what();
+            }
+        };
         std::string query;
         bool typing = false; // desktop only; the Switch uses the system keyboard
         size_t downloadRow = 0;
@@ -2708,6 +2745,12 @@ int main(int argc, char **argv) {
                             screen = Screen::Library;
                     }
                 }
+            } else if (screen == Screen::Download && ftpRunning()) {
+                // FTP mode owns the screen; Plus (or Back) stops it.
+                if (pause || back) {
+                    setFtp(false);
+                    audio.playSfx(Sfx::Back);
+                }
             } else if (screen == Screen::Download) {
                 downloads = downloader->view();
                 if (downloads.results.size() != ownedFor || downloads.downloads != ownedAt) {
@@ -2796,6 +2839,10 @@ int main(int argc, char **argv) {
                     if (secondary || key(SDL_SCANCODE_SLASH)) {
                         audio.playSfx(Sfx::Select, .7f);
                         openSearch();
+                    }
+                    if (pause) {
+                        audio.playSfx(Sfx::Select, .7f);
+                        setFtp(true);
                     }
                     if (back) {
                         // Back always leaves; a queue keeps downloading behind the
@@ -3395,6 +3442,18 @@ int main(int argc, char **argv) {
             }
             // Downloads finishing while the player is elsewhere: check the card
             // again behind the menus, so the new songs join the list.
+            if (ftp)
+                ftpStatus = ftp->status();
+            if (ftpCardChanged && !ftpRunning() && !refresh.valid()) {
+                // Songs copied over FTP join the list once the server stops,
+                // the same way finished downloads do.
+                ftpCardChanged = false;
+                refreshVersion = libraryVersion;
+                refresh = std::async(std::launch::async, [&root, known = entries, &stopRefresh] {
+                    runInBackground();
+                    return fret::scanLibrary(root, known, {}, &stopRefresh);
+                });
+            }
             if (downloader && screen != Screen::Download && !refresh.valid() && downloader->completed() != downloadsSeen) {
                 downloadsSeen = downloader->completed();
                 refreshVersion = libraryVersion;
@@ -4100,6 +4159,38 @@ int main(int argc, char **argv) {
                     hints({{glyphAccept, tr("OPEN")}, {glyphBack, tr("SAVE & BACK")}});
                 else
                     hints({{glyphAccept, tr("SELECT")}, {"<>", tr("CHANGE")}, {glyphBack, tr("BACK")}});
+            } else if (screen == Screen::Download && ftpRunning()) {
+                wall(ui, ink::crt);
+                text(58, 24, tr("FTP MODE"), stencil(78, ink::chrome, {116, 122, 138, 255}));
+                text(72, 118, tr("copy songs from a computer"), marker(26, {198, 200, 212, 255}, -3));
+                plate(60, 170, 1160, 440);
+                const auto &st = ftpStatus;
+                if (st.address.empty()) {
+                    auto warn = marker(34, ink::blood, -2);
+                    warn.maxWidth = 1080;
+                    text(100, 210, tr("No network: connect the console to the internet first."), warn);
+                } else {
+                    text(100, 204, tr("Connect an FTP client to:"), body(24, ink::dim));
+                    auto big = stencil(64, ink::acid, {96, 190, 40, 255});
+                    big.maxWidth = 1080;
+                    text(100, 244, "ftp://" + st.address + ":" + std::to_string(st.port), big);
+                }
+                auto info = body(24, ink::white);
+                info.maxWidth = 1080;
+                text(100, 344, tr("Log in as anonymous, with any password."), info);
+                text(100, 384, tr("Only the songs folder is shared. Put each song in its own folder."), info);
+                char mb[32];
+                std::snprintf(mb, sizeof mb, "%.1f", double(st.received) / (1024.0 * 1024.0));
+                auto counts = marker(28, ink::white, -1);
+                text(100, 450, tr(st.clients == 1 ? "{} client connected" : "{} clients connected", st.clients), counts);
+                text(520, 450, tr("{} MB received", mb), counts);
+                if (!st.last.empty()) {
+                    auto last = body(20, ink::dim);
+                    last.maxWidth = 1080;
+                    text(100, 510, tr("last: {}", st.last), last);
+                }
+                text(100, 556, tr("New songs join the list when you stop FTP mode."), body(20, ink::faint));
+                hints({{"+", tr("STOP FTP")}});
             } else if (screen == Screen::Download) {
                 wall(ui, ink::crt);
                 text(58, 24, tr("DOWNLOAD"), stencil(78, ink::chrome, {116, 122, 138, 255}));
@@ -4283,6 +4374,7 @@ int main(int argc, char **argv) {
                     std::vector<std::pair<std::string, std::string>> items = {
                         {glyphAccept, tr(downloads.current.empty() && downloads.queued.empty() ? "DOWNLOAD" : "QUEUE")},
                         {glyphAlt, tr("SEARCH")},
+                        {"+", tr("FTP")},
                         {glyphBack, tr("BACK")}};
                     if (!downloads.current.empty() || !downloads.queued.empty())
                         items.push_back({settings.wiiGuitar ? fretGlyph(3) : "X", tr("CANCEL ALL")});

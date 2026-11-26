@@ -26,6 +26,19 @@ cross-build. The items marked *(hardware)* still need a run on a console.
   re-strike consumes that press, so one press still hits one note.
   Contributed by aloumamae.
 
+### FTP mode *(hardware)*
+- **+** on the download screen starts an FTP server and shows its address
+  (`ftp://<console IP>:5000`), so songs can be copied from a computer without
+  taking the SD card out. **+** or **B** stops it.
+- Anonymous login (any user and password) for now. Only the songs folder is
+  shared: clients see it as `/` and `..` stops there, so nothing outside it can
+  be reached. On desktop builds, symlinks leading out are refused too.
+- Passive mode, up to four clients, uploads, downloads, listings, new folders,
+  renames and deletes. The console is kept awake while it runs, and songs
+  added or removed join the list when it stops.
+- Tested with Python's ftplib and curl against the server, and through the
+  game on desktop; not yet run on a console.
+
 ### Background video *(hardware)*
 - **Options -> Customize -> Background video** (off by default) plays a song
   folder's `video.webm` full screen behind the highway, dimmed so the notes stay
