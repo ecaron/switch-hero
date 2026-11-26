@@ -83,5 +83,28 @@ int main() {
     auto absent = fret::decodeWiiGuitar(report.data(), 6);
     check(!absent.frets && !absent.right && absent.whammy == 0, "unavailable extension");
     check(!fret::wiiGuitarFrets((1ull << 3) | (1ull << 6) | (1ull << 11)), "actions aren't frets");
+    {
+        // Multiplayer seats. The strum bar arrives as d-pad up/down, and every
+        // seat must accept it, or no guitar can hit a strummed note.
+        constexpr std::uint64_t A = 1ull << 1, B = 1ull << 0, up = 1ull << 11, down = 1ull << 12,
+                                minus = 1ull << 4, green = 1ull << fret::wiiGuitarBindings[0],
+                                red = 1ull << fret::wiiGuitarBindings[1];
+        check(fret::strummed(up) && fret::strummed(down), "strum bar strums");
+        check(fret::strummed(A), "A still strums");
+        check(!fret::strummed(green | red | (1ull << 13) | (1ull << 14)), "frets and left/right do not strum");
+        // Guitar mode: any seat uses the fixed guitar frets, even if its own
+        // bindings say otherwise.
+        const std::array<int, 5> remapped = {2, 3, 7, 8, 13};
+        const std::uint64_t chord = green | (1ull << fret::wiiGuitarBindings[4]);
+        check(fret::seatFrets(true, chord, remapped) == 0x11, "guitar seat uses guitar frets");
+        check(fret::seatFrets(false, 1ull << 7, remapped) == 0x04, "pad seat uses its bindings");
+        check(fret::seatFrets(false, chord, remapped) == 0, "pad seat ignores guitar layout");
+        // Lobby: green joins and red backs on a guitar; orange (B) must not back.
+        check(fret::seatAccept(true, green) && fret::seatAccept(true, A), "guitar seat joins");
+        check(!fret::seatAccept(false, green), "a pad's L is not accept");
+        check(fret::seatBack(true, red) && fret::seatBack(true, minus), "guitar seat backs");
+        check(!fret::seatBack(true, B), "orange fret does not leave the lobby");
+        check(fret::seatBack(false, B) && !fret::seatBack(false, red), "pads back with B");
+    }
     std::cout << "Wii guitar input tests passed\n";
 }

@@ -3,6 +3,7 @@
 #include "calibration.hpp"
 #include "clock.hpp"
 #include "downloader.hpp"
+#include "ftp.hpp"
 #include "game.hpp"
 #include "guitar_input.hpp"
 #include "lang.hpp"
@@ -10,6 +11,7 @@
 #include "look.hpp"
 #include "platform.hpp"
 #include "scores.hpp"
+#include "video.hpp"
 #include <SDL.h>
 #include <algorithm>
 #include <array>
@@ -110,6 +112,9 @@ struct Settings {
     int highway = 0, palette = 0;
     bool rumble = true;
     bool hitRatings = true; // the PERFECT / GREAT / GOOD pop-up over the strike line
+    // A song's video.webm behind the highway. Off by default: decoding video
+    // is the heaviest thing the game can ask of the console.
+    bool backgroundVideo = false;
     void load(const fs::path &path) {
         std::ifstream f(path);
         std::string line;
@@ -147,6 +152,8 @@ struct Settings {
                 rumble = v != 0;
             if (k == "film_grain")
                 filmGrain = v != 0;
+            if (k == "background_video")
+                backgroundVideo = v != 0;
             if (k == "sort_mode")
                 sortMode = whole(v, 0, 2);
             if (k == "hit_window")
@@ -191,7 +198,7 @@ struct Settings {
           << "\nfilm_grain " << filmGrain
           << "\nsort_mode " << sortMode << "\nhit_window " << hitWindow << "\nmusic_volume " << musicVolume
           << "\nsfx_volume " << sfxVolume << "\nhighway " << highway << "\npalette " << palette << "\nrumble " << rumble
-          << "\nhit_ratings " << hitRatings << '\n';
+          << "\nhit_ratings " << hitRatings << "\nbackground_video " << backgroundVideo << '\n';
         if (language >= 0)
             f << "language " << language << '\n';
         if (!lastSong.empty())
@@ -312,8 +319,8 @@ class Controller {
             for (size_t p = 0; p < maxPlayers; ++p)
                 s.standardStick[p] = std::max(deflection(padGetStickPos(&nx[p], 0)), deflection(padGetStickPos(&nx[p], 1)));
             s.guitarWhammy = std::clamp(float(padGetStickPos(&nxGuitar, 1).x) / JOYSTICK_MAX, 0.0f, 1.0f);
-            // Each player is stamped from their own rising edge. The guitar only
-            // ever belongs to player one, so it is folded into that pad alone.
+            // Each player is stamped from their own rising edge. The separate No1
+            // guitar pad is player one's, so it is folded into that pad alone.
             bool rising[maxPlayers];
             for (size_t p = 0; p < maxPlayers; ++p) {
                 const uint64_t down = (s.standard[p] | (p == 0 ? s.guitar : 0)) & watched;
@@ -522,7 +529,9 @@ class Controller {
                 *pressedAt = pressAt[player];
             pressAt[player] = -1;
         }
-        // Only player one can hold the Wii guitar; the others are plain pads.
+        // Player one's guitar is read through its own No1 pad so it can be
+        // isolated from the handheld controls. A guitar on seats two to four is
+        // simply that seat's pad, and its buttons arrive through `standard`.
         const bool guitarHere = wiiGuitar && player == 0;
         guitarConnected = s.guitarOn;
         if (player == 0)
@@ -1196,7 +1205,7 @@ void menu(float cx, float y, float spacing, const std::vector<std::string> &item
 
 // The options screens: a short list of categories, each opening its own page,
 // so every setting sits under a name that says what it is for.
-enum class Opt { Mode, NoFail, HitWindow, Speed, Lefty, TimingOverlay, FilmGrain, Music, Effects, CalibrateAudio, AudioOffset, CalibrateVideo, VideoOffset, Fret, Test, Reset, Language, Highway, Palette, Rumble, HitRatings };
+enum class Opt { Mode, NoFail, HitWindow, Speed, Lefty, TimingOverlay, FilmGrain, Music, Effects, CalibrateAudio, AudioOffset, CalibrateVideo, VideoOffset, Fret, Test, Reset, Language, Highway, Palette, Rumble, HitRatings, BackgroundVideo };
 struct OptionRow {
     Opt id;
     int fret = 0;
@@ -1276,6 +1285,12 @@ std::vector<OptionRow> optionRows(int page, const Settings &s, bool confirmReset
         rows.push_back({Opt::Palette, 0, tr("Note colors"), tr(look::palettes()[size_t(s.palette)].name),
                         tr("Gems, fret buttons, sustains and flames. Star power stays blue."), true, "",
                         of(s.palette, look::palettes().size())});
+        if (BackgroundVideo::supported())
+            rows.push_back({Opt::BackgroundVideo, 0, tr("Background video"), tr(s.backgroundVideo ? "ON" : "OFF"),
+                            tr("Plays the song's video.webm behind the highway, if its folder has one."), true});
+        else
+            rows.push_back({Opt::BackgroundVideo, 0, tr("Background video"), tr("OFF"),
+                            tr("This build has no video support."), false});
     } else if (page == 5) {
         // Each language is shown in its own name, so a player who cannot read
         // the current one still recognises theirs.
@@ -1329,7 +1344,7 @@ int main(int argc, char **argv) {
 #else
         fs::path root = "songs", config = "settings.cfg", scoresPath = "scores.cfg", libraryPath = "library.cache";
 #endif
-        bool inspect = false, smoke = false, smokeGuitar = false, timing = false, checkGemsOnly = false;
+        bool inspect = false, smoke = false, smokeGuitar = false, smokeVideo = false, timing = false, checkGemsOnly = false;
         std::string bakeGemsTo;
         std::string shot = "switch-hero.bmp";
         for (int i = 1; i < argc; ++i) {
@@ -1340,6 +1355,8 @@ int main(int argc, char **argv) {
                 smoke = true;
             else if (a == "--smoke-wii-guitar")
                 smoke = smokeGuitar = true;
+            else if (a == "--smoke-video")
+                smoke = smokeVideo = true; // the smoke test with background video on
             else if (a == "--timing")
                 timing = true;
             else if (a == "--screenshot" && i + 1 < argc)
@@ -1351,7 +1368,7 @@ int main(int argc, char **argv) {
             else if (a == "--check-gems")
                 checkGemsOnly = true;
             else if (a == "--help") {
-                std::cout << "switch-hero [--songs FOLDER] [--inspect] [--smoke | --smoke-wii-guitar] [--timing] [--screenshot FILE.bmp]\n"
+                std::cout << "switch-hero [--songs FOLDER] [--inspect] [--smoke | --smoke-wii-guitar | --smoke-video] [--timing] [--screenshot FILE.bmp]\n"
                              "            [--bake-gems FILE] [--check-gems]\n";
                 return 0;
             } else
@@ -1547,6 +1564,8 @@ int main(int argc, char **argv) {
         Controller controller;
         if (smokeGuitar)
             settings.wiiGuitar = true;
+        if (smokeVideo)
+            settings.backgroundVideo = true;
         Audio audio;
         audio.start(); // interface sounds work from the song list onward
         enum class Screen { Language, Main, Library, Select, Playing, Paused, Countdown, Results, Settings, Calibrate, Download, Sections, Lobby };
@@ -1571,6 +1590,30 @@ int main(int argc, char **argv) {
         // multiplayer branch below is guarded on it, so the single-player path
         // stays exactly the code it was.
         std::unique_ptr<MultiSession> multi;
+        // The song's video.webm behind the highway, when the option is on.
+        BackgroundVideo video;
+        auto openVideo = [&]() {
+            if (settings.backgroundVideo && song && !song->video.empty())
+                video.open(song->video); // the same file again only seeks
+            else
+                video.close();
+        };
+        // Draws the video frame for the moment the highway shows, full screen
+        // and cropped to fill it, dimmed so the notes stay the brightest thing
+        // on screen. Nothing is drawn while there is no frame: the room shows.
+        auto backdrop = [&](double chartTime) {
+            if (!song || !video.active())
+                return;
+            SDL_Texture *t = video.frame(renderer, videoClock(chartTime, song->offset, song->videoStart));
+            if (!t || video.width() <= 0 || video.height() <= 0)
+                return;
+            const float scale = std::max(float(W) / video.width(), float(H) / video.height());
+            const float w = video.width() * scale, h = video.height() * scale;
+            const SDL_FRect dst{(W - w) / 2, (H - h) / 2, w, h};
+            look::flush();
+            SDL_RenderCopyF(renderer, t, nullptr, &dst);
+            look::rect(0, 0, W, H, {0, 0, 0, 150});
+        };
         // Lobby: who has joined, and what each of them picked.
         struct Seat {
             bool joined = false;
@@ -1822,6 +1865,42 @@ int main(int argc, char **argv) {
         // when networking starts.
         std::unique_ptr<Downloader> downloader;
         Downloader::View downloads;
+        // FTP mode (Plus on the download screen): a server sharing the songs
+        // folder only. Declared after the downloader, whose network it uses,
+        // so it is stopped before that network goes down.
+        std::unique_ptr<FtpServer> ftp;
+        FtpServer::Status ftpStatus; // read once a frame
+        bool ftpCardChanged = false; // files changed over FTP: check the library again
+        auto ftpRunning = [&]() { return ftp && ftpStatus.running; };
+        auto setFtp = [&](bool on) {
+#ifdef __SWITCH__
+            // A long copy must not be cut off by the console going to sleep.
+            appletSetMediaPlaybackState(on);
+#endif
+            if (!on) {
+                if (ftp) {
+                    ftp->stop();
+                    ftpStatus = ftp->status();
+                    ftpCardChanged = ftpCardChanged || ftpStatus.changes > 0;
+                }
+                return;
+            }
+            try {
+                if (!downloader)
+                    throw std::runtime_error("Networking is not available");
+                downloader->startNetwork();
+                if (!ftp)
+                    ftp = std::make_unique<FtpServer>(root);
+                ftp->start();
+                ftpStatus = ftp->status();
+                message.clear();
+            } catch (const std::exception &e) {
+#ifdef __SWITCH__
+                appletSetMediaPlaybackState(false);
+#endif
+                message = e.what();
+            }
+        };
         std::string query;
         bool typing = false; // desktop only; the Switch uses the system keyboard
         size_t downloadRow = 0;
@@ -1974,6 +2053,7 @@ int main(int argc, char **argv) {
                 }
                 multi.reset(); // single player owns the screen again
                 newRun();
+                openVideo();
                 previewActive = false, previewFolder.clear(); // load() replaced the preview
                 settings.lastSong = song->folder.filename().string();
                 audio.pause(false);
@@ -2054,6 +2134,7 @@ int main(int argc, char **argv) {
                 audio.load(*song);
                 multi = std::make_unique<MultiSession>(*song, tracks, settings.hitWindow);
                 lobbySeats = whose;
+                openVideo();
                 for (auto &p : multi->players)
                     p.gamepadMode = settings.gamepad && !settings.wiiGuitar;
                 // The rock meter still moves and still reads red on a player's own
@@ -2421,8 +2502,8 @@ int main(int argc, char **argv) {
                                pDown = seatPress(12) || (p == 0 && key(SDL_SCANCODE_DOWN)),
                                pLeft = seatPress(13) || (p == 0 && key(SDL_SCANCODE_LEFT)),
                                pRight = seatPress(14) || (p == 0 && key(SDL_SCANCODE_RIGHT)),
-                               pAccept = seatPress(1) || (p == 0 && key(SDL_SCANCODE_RETURN)),
-                               pBack = seatPress(0) || seatPress(4) || (p == 0 && key(SDL_SCANCODE_ESCAPE));
+                               pAccept = seatAccept(settings.wiiGuitar, hit) || (p == 0 && key(SDL_SCANCODE_RETURN)),
+                               pBack = seatBack(settings.wiiGuitar, hit) || (p == 0 && key(SDL_SCANCODE_ESCAPE));
                     auto &seat = seats[p];
                     if (!seat.joined) {
                         // Player one cannot leave: backing out of the lobby is
@@ -2664,6 +2745,12 @@ int main(int argc, char **argv) {
                             screen = Screen::Library;
                     }
                 }
+            } else if (screen == Screen::Download && ftpRunning()) {
+                // FTP mode owns the screen; Plus (or Back) stops it.
+                if (pause || back) {
+                    setFtp(false);
+                    audio.playSfx(Sfx::Back);
+                }
             } else if (screen == Screen::Download) {
                 downloads = downloader->view();
                 if (downloads.results.size() != ownedFor || downloads.downloads != ownedAt) {
@@ -2752,6 +2839,10 @@ int main(int argc, char **argv) {
                     if (secondary || key(SDL_SCANCODE_SLASH)) {
                         audio.playSfx(Sfx::Select, .7f);
                         openSearch();
+                    }
+                    if (pause) {
+                        audio.playSfx(Sfx::Select, .7f);
+                        setFtp(true);
                     }
                     if (back) {
                         // Back always leaves; a queue keeps downloading behind the
@@ -2910,6 +3001,13 @@ int main(int argc, char **argv) {
                                 audio.playSfx(Sfx::Toggle, .8f);
                         }
                         break;
+                    case Opt::BackgroundVideo:
+                        if ((delta || accept) && BackgroundVideo::supported()) {
+                            settings.backgroundVideo = !settings.backgroundVideo;
+                            if (accept)
+                                audio.playSfx(Sfx::Toggle, .8f);
+                        }
+                        break;
                     case Opt::FilmGrain:
                         if (delta || accept) {
                             settings.filmGrain = !settings.filmGrain;
@@ -3008,22 +3106,27 @@ int main(int argc, char **argv) {
                     for (size_t i = 0; i < multi->size(); ++i) {
                         const size_t seat = i < lobbySeats.size() ? lobbySeats[i] : i;
                         double seatStamp = -1;
-                        const uint64_t held = controller.read(settings.wiiGuitar, true, &seatStamp, seat);
+                        float seatWhammy = 0;
+                        const uint64_t held =
+                            controller.read(settings.wiiGuitar, true, &seatStamp, seat, &seatWhammy);
+                        // The frame's general read already took player one's
+                        // press stamp, so theirs comes from there.
+                        if (seat == 0)
+                            seatStamp = pressedAtSeconds;
                         const uint64_t hit = held & ~previousSeatButtons[seat];
                         previousSeatButtons[seat] = held;
-                        uint8_t seatFrets = settings.wiiGuitar && seat == 0 ? wiiGuitarFrets(held) : 0;
-                        if (!(settings.wiiGuitar && seat == 0))
-                            for (int f = 0; f < 5; ++f)
-                                if (held & bit(settings.bindings[size_t(f)]))
-                                    seatFrets |= uint8_t(1 << f);
+                        // Any seat may hold a guitar, so guitar mode gives every
+                        // seat the fixed guitar frets and the strum bar.
+                        const uint8_t playerFrets = seatFrets(settings.wiiGuitar, held, settings.bindings);
                         if (hit & bit(3))
                             (*multi)[i].activate();
                         // Kept for the render: the highway lights the fret a
                         // player is holding from this, so without it their
                         // buttons only lit when a note was actually judged.
-                        seatFretsNow[i] = seatFrets;
+                        seatFretsNow[i] = playerFrets;
                         auto &p = (*multi)[i];
-                        p.update(time, seatFrets, bool(hit & bit(1)), bool(hit & bit(1)),
+                        p.whammy(seatWhammy, time);
+                        p.update(time, playerFrets, strummed(hit), bool(hit & bit(1)),
                                  seatPressTime(time, seatStamp));
                         // One screech per fumble, and the rate limit is shared:
                         // four players dropping notes at once would otherwise
@@ -3339,6 +3442,18 @@ int main(int argc, char **argv) {
             }
             // Downloads finishing while the player is elsewhere: check the card
             // again behind the menus, so the new songs join the list.
+            if (ftp)
+                ftpStatus = ftp->status();
+            if (ftpCardChanged && !ftpRunning() && !refresh.valid()) {
+                // Songs copied over FTP join the list once the server stops,
+                // the same way finished downloads do.
+                ftpCardChanged = false;
+                refreshVersion = libraryVersion;
+                refresh = std::async(std::launch::async, [&root, known = entries, &stopRefresh] {
+                    runInBackground();
+                    return fret::scanLibrary(root, known, {}, &stopRefresh);
+                });
+            }
             if (downloader && screen != Screen::Download && !refresh.valid() && downloader->completed() != downloadsSeen) {
                 downloadsSeen = downloader->completed();
                 refreshVersion = libraryVersion;
@@ -3501,6 +3616,10 @@ int main(int argc, char **argv) {
             }
             const std::string glyphAccept = acceptGlyph(settings.wiiGuitar), glyphBack = backGlyph(settings.wiiGuitar),
                               glyphAlt = altGlyph(settings.wiiGuitar);
+            // The decoder only runs while a song is on screen.
+            if (screen != Screen::Playing && screen != Screen::Paused && screen != Screen::Countdown &&
+                screen != Screen::Results && video.active())
+                video.close();
             if (screen == Screen::Language) {
                 wall(ui, ink::crt);
                 auto title = stencil(66, ink::chrome, {116, 122, 138, 255});
@@ -4040,6 +4159,38 @@ int main(int argc, char **argv) {
                     hints({{glyphAccept, tr("OPEN")}, {glyphBack, tr("SAVE & BACK")}});
                 else
                     hints({{glyphAccept, tr("SELECT")}, {"<>", tr("CHANGE")}, {glyphBack, tr("BACK")}});
+            } else if (screen == Screen::Download && ftpRunning()) {
+                wall(ui, ink::crt);
+                text(58, 24, tr("FTP MODE"), stencil(78, ink::chrome, {116, 122, 138, 255}));
+                text(72, 118, tr("copy songs from a computer"), marker(26, {198, 200, 212, 255}, -3));
+                plate(60, 170, 1160, 440);
+                const auto &st = ftpStatus;
+                if (st.address.empty()) {
+                    auto warn = marker(34, ink::blood, -2);
+                    warn.maxWidth = 1080;
+                    text(100, 210, tr("No network: connect the console to the internet first."), warn);
+                } else {
+                    text(100, 204, tr("Connect an FTP client to:"), body(24, ink::dim));
+                    auto big = stencil(64, ink::acid, {96, 190, 40, 255});
+                    big.maxWidth = 1080;
+                    text(100, 244, "ftp://" + st.address + ":" + std::to_string(st.port), big);
+                }
+                auto info = body(24, ink::white);
+                info.maxWidth = 1080;
+                text(100, 344, tr("Log in as anonymous, with any password."), info);
+                text(100, 384, tr("Only the songs folder is shared. Put each song in its own folder."), info);
+                char mb[32];
+                std::snprintf(mb, sizeof mb, "%.1f", double(st.received) / (1024.0 * 1024.0));
+                auto counts = marker(28, ink::white, -1);
+                text(100, 450, tr(st.clients == 1 ? "{} client connected" : "{} clients connected", st.clients), counts);
+                text(520, 450, tr("{} MB received", mb), counts);
+                if (!st.last.empty()) {
+                    auto last = body(20, ink::dim);
+                    last.maxWidth = 1080;
+                    text(100, 510, tr("last: {}", st.last), last);
+                }
+                text(100, 556, tr("New songs join the list when you stop FTP mode."), body(20, ink::faint));
+                hints({{"+", tr("STOP FTP")}});
             } else if (screen == Screen::Download) {
                 wall(ui, ink::crt);
                 text(58, 24, tr("DOWNLOAD"), stencil(78, ink::chrome, {116, 122, 138, 255}));
@@ -4223,6 +4374,7 @@ int main(int argc, char **argv) {
                     std::vector<std::pair<std::string, std::string>> items = {
                         {glyphAccept, tr(downloads.current.empty() && downloads.queued.empty() ? "DOWNLOAD" : "QUEUE")},
                         {glyphAlt, tr("SEARCH")},
+                        {"+", tr("FTP")},
                         {glyphBack, tr("BACK")}};
                     if (!downloads.current.empty() || !downloads.queued.empty())
                         items.push_back({settings.wiiGuitar ? fretGlyph(3) : "X", tr("CANCEL ALL")});
@@ -4381,7 +4533,9 @@ int main(int argc, char **argv) {
                 const size_t n = multi->size();
                 // The wall is the room everyone is in, so it is drawn once behind
                 // every pane rather than once per pane, where the seams would show.
+                // The video is the same: one picture behind every board.
                 wall(ui, ink::crt);
+                backdrop(time - settings.videoMs / 1000);
                 // Each board wears its own player's highway and note colours.
                 Settings looks = settings;
                 for (size_t i = 0; i < n; ++i) {
@@ -4546,6 +4700,7 @@ int main(int argc, char **argv) {
             } else if (session && song) {
                 double time = screen == Screen::Playing ? songTime() : frozen;
                 wall(ui, session->powerActive ? ink::power : ink::crt);
+                backdrop(time - settings.videoMs / 1000);
                 highway(*song, *session, settings, time - settings.videoMs / 1000, frets, ui);
                 // Call the timing. A hit that the game cannot tell you was tight is a
                 // hit that feels the same as one scraped in at the edge of the window,
@@ -4972,6 +5127,7 @@ int main(int argc, char **argv) {
             SDL_DestroyTexture(downloadArt);
         for (auto *t : retired)
             SDL_DestroyTexture(t);
+        video.close(); // its texture belongs to the renderer
         look::shutdown();
         SDL_DestroyRenderer(renderer);
         look::renderer = nullptr;

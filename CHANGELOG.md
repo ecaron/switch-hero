@@ -26,6 +26,46 @@ cross-build. The items marked *(hardware)* still need a run on a console.
   re-strike consumes that press, so one press still hits one note.
   Contributed by aloumamae.
 
+### FTP mode *(hardware)*
+- **+** on the download screen starts an FTP server and shows its address
+  (`ftp://<console IP>:5000`), so songs can be copied from a computer without
+  taking the SD card out. **+** or **B** stops it.
+- Anonymous login (any user and password) for now. Only the songs folder is
+  shared: clients see it as `/` and `..` stops there, so nothing outside it can
+  be reached. On desktop builds, symlinks leading out are refused too.
+- Passive mode, up to four clients, uploads, downloads, listings, new folders,
+  renames and deletes. The console is kept awake while it runs, and songs
+  added or removed join the list when it stops.
+- Tested with Python's ftplib and curl against the server, and through the
+  game on desktop; not yet run on a console.
+
+### Background video *(hardware)*
+- **Options -> Customize -> Background video** (off by default) plays a song
+  folder's `video.webm` full screen behind the highway, dimmed so the notes stay
+  readable, in single player and behind every board in multiplayer.
+- The video follows the song clock rather than running on its own, so pause,
+  restart, practice loops and the visual offset all keep it in step; a jump the
+  decoder can't reach by playing forward becomes a seek. `song.ini`'s
+  `video_start_time` shifts it as in Clone Hero.
+- VP8, VP9 and AV1 decode in software (FFmpeg, from devkitPro's portlibs) on
+  one thread on a spare core, below the input and audio threads. Late frames
+  are dropped and, if it keeps falling behind, the loop filter is switched off;
+  the notes are never held up. 720p should be comfortable; 1080p is the thing
+  to check on a console. The NRO grows from about 15 MB to 28 MB.
+- A desktop build without FFmpeg's development files still builds, with the
+  option shown as unavailable. `--smoke-video` runs the smoke test with video on.
+
+### Wii guitars in multiplayer *(hardware)*
+- The strum bar now strums in multiplayer. Seats only took A as a strum, and
+  MissionControl sends the strum bar as d-pad up/down, so no guitar could hit
+  a strummed note.
+- In guitar mode every seat uses the fixed guitar frets, so two to four guitars
+  can play at once, not just player one's.
+- In the lobby a guitar joins with green and leaves with red; the orange fret
+  (B) no longer drops the seat.
+- Multiplayer reads each seat's whammy, and player one's presses keep their
+  timestamp instead of being judged at frame time.
+
 ### Other
 - The title screen and the download user agent show the full version
   (`v0.3.1`, `switch-hero/0.3.1`) rather than major.minor only.

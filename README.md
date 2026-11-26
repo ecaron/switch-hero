@@ -74,7 +74,8 @@ delete the old folder so the Homebrew Menu only lists Switch Hero.
 - **Offset calibration.** Tap along to set the audio and visual offsets (see
   [Calibration](#calibration)).
 - **In-game chart downloads** from Chorus Encore (see
-  [Downloading charts](#downloading-charts)).
+  [Downloading charts](#downloading-charts)), and an **FTP mode** for copying
+  songs from a computer (see [Copying songs over FTP](#copying-songs-over-ftp)).
 - **Cut-jewel gems and classic fire.** Gems are rendered in 3D ahead of time
   and ship in `assets/gems.bin`. A ray marcher lights each sprite pixel of a
   cut jewel in a gunmetal bezel: eight crown facets rise to a flat table, and
@@ -229,7 +230,8 @@ panel:
   over each second (plus audio clock drift during a song), and film grain.
 - **Controls:** fret buttons, controller test, reset all options (press A
   twice to confirm).
-- **Customize:** highway and note colours, with a live preview.
+- **Customize:** highway and note colours, with a live preview, and the
+  background video.
 - **Language:** English or Português.
 
 On the results screen, **Y** switches to a section-by-section view.
@@ -303,7 +305,19 @@ rules, not a promise of exact Clone Hero score parity.
 
 ### Customization
 
-Options -> Customize picks the **highway** and the **note colors**.
+Options -> Customize picks the **highway** and the **note colors**, and turns
+the **background video** on or off.
+
+- **Background video (off by default):** when a song folder has a
+  `video.webm`, it plays full screen behind the highway, dimmed so the notes
+  stay readable, in single player and behind every board in multiplayer. It
+  follows the song clock, so pausing, restarting and practice loops keep it in
+  step, and `song.ini`'s `video_start_time` (milliseconds) shifts it as in Clone
+  Hero. VP8, VP9 and AV1 are decoded in software on a core of their own; a
+  video the console can't keep up with drops frames, then turns off the loop
+  filter for a softer but cheaper picture, and never holds up the notes. 720p
+  is the safe size; 1080p may stutter. Before the video starts and after it
+  ends, the usual room shows.
 
 - **Highways (13):** Grip tape, Rosewood, Synthwave, Pastel dream, Hellfire,
   Diamond plate, Carbon fiber, Thunderstorm, Toxic waste, Zebra,
@@ -325,7 +339,10 @@ Bluetooth needs the supplied **MissionControl guitar-extension patch** from
 [`integrations/missioncontrol/`](integrations/missioncontrol/README.md).
 Installing the game alone, or using stock MissionControl, isn't enough.
 
-Guitar mode only takes over player one while a controller is connected there.
+In multiplayer, any seat can hold a Wii guitar: guitar mode gives every seat
+the fixed fret layout and strum bar, green joins the lobby and red leaves it.
+In single player, guitar mode only takes over player one while a controller is
+connected there.
 Plus and Minus always respond from the normal controller, so guitar mode can't
 lock you out of the game. **Options → Controls → Controller test** shows live input for
 diagnosing a guitar. Tilt, whammy effects and touch-strip inputs aren't
@@ -384,12 +401,33 @@ and any parts the game can't play.
 
 Charts arrive as `.sng` packages. The game unpacks them in a staging folder and
 moves them into place only when complete, so a failed or cancelled download
-never leaves half a song behind. Background videos are skipped, because the
-game doesn't play them. The package's metadata becomes `song.ini`.
+never leaves half a song behind. Background videos are skipped to keep
+downloads small (copy a `video.webm` into the song folder yourself to see
+one). The package's metadata becomes `song.ini`.
 
 The Switch needs an internet connection. Networking only starts the first time
 you open the download screen. HTTPS uses the console's own SSL service.
 Requests identify the game as `switch-hero/0.3.1`.
+
+### Copying songs over FTP
+
+Press **+** on the download screen to start FTP mode. The screen shows an
+address such as `ftp://192.168.1.23:5000`; connect to it from any FTP client
+(FileZilla, WinSCP, a file manager or `curl`) on the same network. Press
+**+** or **B** to stop.
+
+- **Log in anonymously:** user `anonymous`, any password. There is no other
+  account yet.
+- **Only the songs folder is shared.** The client sees
+  `sd:/switch/switch-hero/songs` as `/`, and nothing outside it can be named,
+  listed, read or written: `..` stops at that root.
+- Copy each song as its own folder (`Artist - Song/notes.chart`, `song.ogg`,
+  and so on). Uploads, downloads, new folders, renames and deletes all work;
+  a folder must be empty before it can be removed, which clients handle for you.
+- **Passive mode only**, the default in every current client. Up to four
+  clients at once, on port 5000.
+- The console stays awake while FTP mode is on. New songs join the list when
+  you stop it.
 
 ### Deleting songs
 
@@ -412,6 +450,7 @@ songs/
     song.ogg             (or song.opus / song.mp3 / guitar.ogg, etc.)
     guitar.ogg           (optional separate stem)
     drums_1.ogg          (optional separate stem)
+    video.webm           (optional background video)
 ```
 
 Subfolders are scanned recursively, up to 16 levels deep. Standard file names
@@ -447,6 +486,7 @@ checks its audio.
 | FLAC | Desktop only; convert to OGG before Switch use |
 | `.sng` packages | Unpacked by the in-game downloader; copied `.sng` files aren't opened directly |
 | ZIP, RAR archives | Not opened; extract to a song folder first |
+| `video.webm` background video | VP8/VP9/AV1, optional (Options -> Customize); `video_start_time` honoured; other video file names aren't played |
 | Accented titles | Shown without accents (the fonts are ASCII); other scripts show as `?` |
 | Video/background art, lyrics, solos/BRE special scoring | Not implemented; gameplay still reads regular notes |
 | Six-fret guitars, drums, vocals, pro instruments | Not playable in this version |
@@ -540,6 +580,8 @@ project owner.
 ```bash
 sudo apt update
 sudo apt install build-essential cmake libsdl2-dev libsndfile1-dev libcurl4-openssl-dev python3 ffmpeg
+# Optional, for background videos; without them the option shows as unavailable.
+sudo apt install pkg-config libavformat-dev libavcodec-dev libswscale-dev
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure
@@ -564,7 +606,7 @@ Install the official devkitPro toolchain following
 <https://devkitpro.org/wiki/Getting_Started>. With `dkp-pacman` configured:
 
 ```bash
-sudo dkp-pacman -S --needed switch-dev switch-sdl2 switch-libvorbis switch-opusfile switch-mpg123 switch-curl
+sudo dkp-pacman -S --needed switch-dev switch-sdl2 switch-libvorbis switch-opusfile switch-mpg123 switch-curl switch-ffmpeg
 bash tools/build-switch.sh
 ```
 
@@ -602,6 +644,11 @@ First hardware check:
 - **enchor**: search requests and responses, folder names, and `.sng`
   unpacking, including path traversal, truncated and bogus packages.
 - **guitar**: Wii guitar input routing.
+- **video**: background video timing: where the picture belongs against the
+  song clock, when the decoder must seek, and which queued frame to show.
+- **ftp**: FTP mode over real loopback sockets: login, uploads, listings,
+  downloads, renames and deletes, and every way out of the songs folder
+  (`..`, `/..`, backslashes, symlinks) refused.
 
 A real SDL virtual-controller test plays the demo through the normal input path:
 
@@ -609,6 +656,9 @@ A real SDL virtual-controller test plays the demo through the normal input path:
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   ./build/switch-hero --songs ./songs --smoke --screenshot preview.bmp
 ```
+
+`--smoke-video` does the same with the background video on, so a song folder
+with a `video.webm` exercises the decoder and the drawing behind the highway.
 
 It fails if fewer than two notes are hit or playback is interrupted. It uses
 default bindings and doesn't save its settings. The dummy audio driver proves
@@ -621,8 +671,10 @@ the software works together, not physical sound or output latency.
 - `include/clock.hpp`: the song clock.
 - `include/calibration.hpp`: tap-along offset calibration.
 - `src/audio.cpp`: streaming decoders, mixing, sound effects and the calibration click track.
+- `src/video.cpp`, `include/video.hpp`: background video decoding on its own thread, kept on the song clock.
 - `src/enchor.cpp`: Chorus Encore requests and responses, and `.sng` unpacking.
 - `src/downloader.cpp`: the background download thread (curl; libnx sockets on Switch).
+- `src/ftp.cpp`, `include/ftp.hpp`: FTP mode's server, confined to the songs folder.
 - `src/main.cpp`: screens, highway layout, menus, controller mapping, Switch libnx input.
 - `src/look.cpp`: fonts, procedural textures, gems, fret buttons, fire, UI pieces.
 - `include/guitar_input.hpp`, `integrations/missioncontrol/`: Wii guitar support.

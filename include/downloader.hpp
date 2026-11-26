@@ -62,11 +62,13 @@ class Downloader {
     void wantArt(const std::string &url);
     // The image file for `url`: null until it arrives, empty if it failed.
     std::shared_ptr<const std::string> art(const std::string &url) const;
+    // Sockets and curl, started by whichever thread needs them first. Public
+    // for FTP mode: the console's socket service can only be started once, so
+    // the server shares this one. Throws if networking cannot start.
+    void startNetwork();
 
   private:
     struct Network;
-    // Sockets and curl, started by whichever thread needs them first.
-    void startNetwork();
     void runArt();
     struct Job {
         enum class Kind { None, Search, Download } kind = Kind::None;

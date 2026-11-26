@@ -53,6 +53,11 @@ for name in ['chart','midi','utf16','bad','stems']:
 (root/'stems'/'notes.chart').write_text(chart)
 for n in ['drums','drums_1','drums_2','vocals','vocals_1','preview']:
     shutil.copyfile(root/'stems'/'song.wav',root/'stems'/f'{n}.wav')
+# A background video, found case-insensitively; it is never decoded here.
+(root/'stems'/'Video.WEBM').write_bytes(b'')
+(root/'stems'/'song.ini').write_text(ini+'video_start_time = -1500\n')
+# A start time that is not a number is ignored, not a reason to reject the song.
+(root/'chart'/'song.ini').write_text(ini+'video_start_time = soon\n')
 
 def vlq(v):
     out=[v&127];v>>=7

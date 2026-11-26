@@ -344,6 +344,21 @@ const std::tuple<const char *, const char *, const char *> translationTable[] = 
     {"QUEUE", "ADICIONAR", "COLA"},
     {"CANCEL ALL", "CANCELAR TUDO", "CANCELAR TODO"},
 
+    // FTP mode
+    {"FTP", "FTP", "FTP"},
+    {"FTP MODE", "MODO FTP", "MODO FTP"},
+    {"STOP FTP", "PARAR FTP", "DETENER FTP"},
+    {"copy songs from a computer", "copie músicas de um computador", "copia canciones desde un ordenador"},
+    {"Connect an FTP client to:", "Conecte um cliente FTP a:", "Conecta un cliente FTP a:"},
+    {"No network: connect the console to the internet first.", "Sem rede: conecte o console à internet primeiro.", "Sin red: conecta la consola a internet primero."},
+    {"Log in as anonymous, with any password.", "Entre como anonymous, com qualquer senha.", "Inicia sesión como anonymous, con cualquier contraseña."},
+    {"Only the songs folder is shared. Put each song in its own folder.", "Só a pasta de músicas é compartilhada. Coloque cada música na sua própria pasta.", "Solo se comparte la carpeta de canciones. Pon cada canción en su propia carpeta."},
+    {"{} client connected", "{} cliente conectado", "{} cliente conectado"},
+    {"{} clients connected", "{} clientes conectados", "{} clientes conectados"},
+    {"{} MB received", "{} MB recebidos", "{} MB recibidos"},
+    {"last: {}", "último: {}", "último: {}"},
+    {"New songs join the list when you stop FTP mode.", "As músicas novas entram na lista quando você sair do modo FTP.", "Las canciones nuevas se añaden a la lista al salir del modo FTP."},
+
     // Multiplayer
     {"MULTIPLAYER", "MULTIJOGADOR", "MULTIJUGADOR"},
     {"two to four players, split screen", "de dois a quatro jogadores, tela dividida", "de dos a cuatro jugadores, pantalla dividida"},
@@ -370,6 +385,9 @@ const std::tuple<const char *, const char *, const char *> translationTable[] = 
     {"{}% hit", "{}% de acertos", "{}% de aciertos"},
     {"FINAL STANDINGS", "CLASSIFICAÇÃO FINAL", "CLASIFICACIÓN FINAL"},
     {"A plays again   B returns to the song list", "A joga de novo   B volta para a lista", "A juega de nuevo   B vuelve a la lista de canciones"},
+    {"Background video", "Vídeo de fundo", "Video de fondo"},
+    {"Plays the song's video.webm behind the highway, if its folder has one.", "Toca o video.webm da música atrás da pista, se a pasta dela tiver um.", "Reproduce el video.webm de la canción detrás de la pista, si su carpeta tiene uno."},
+    {"This build has no video support.", "Esta versão não tem suporte a vídeo.", "Esta versión no admite video."},
     {"Film grain", "Granulado", "Grano de película"},
     {"The moving speckle over the picture. Turn it off first if frames drop.", "O granulado que se move sobre a imagem. Desligue primeiro se a imagem travar.", "El granulado que se mueve sobre la imagen. Desactívalo primero si bajan los fotogramas."},
 
